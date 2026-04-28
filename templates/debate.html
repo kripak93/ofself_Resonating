@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Exploration — Debate Platform</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, serif; background: #f9f7f4; color: #1a1a1a; min-height: 100vh; }
+
+    /* ── Setup screen ── */
+    .setup { max-width: 560px; margin: 80px auto; padding: 0 24px; }
+    .setup h1 { font-size: 32px; font-weight: normal; margin-bottom: 8px; }
+    .setup p { color: #888; margin-bottom: 40px; font-size: 15px; }
+    .field { margin-bottom: 20px; }
+    .field label { display: block; font-size: 11px; text-transform: uppercase;
+                   letter-spacing: 0.1em; color: #999; margin-bottom: 6px; }
+    .field input, .field textarea, .field select {
+      width: 100%; padding: 12px 14px; border: 1px solid #e0ddd8;
+      border-radius: 8px; font-size: 15px; font-family: Georgia, serif;
+      background: #fff; outline: none; }
+    .field input:focus, .field textarea:focus { border-color: #1a1a1a; }
+    .btn-primary { background: #1a1a1a; color: #fff; border: none; padding: 14px 32px;
+                   border-radius: 8px; font-size: 15px; cursor: pointer; width: 100%; }
+    .btn-primary:hover { background: #333; }
+
+    /* ── Exploration screen ── */
+    .exploration { display: none; max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+    .exp-header { display: flex; justify-content: space-between; align-items: flex-start;
+                  margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid #e0ddd8; }
+    .exp-header h2 { font-size: 22px; font-weight: normal; }
+    .exp-header .meta { font-size: 13px; color: #999; margin-top: 4px; }
+    .rule-badge { background: #f0ede8; padding: 6px 14px; border-radius: 20px;
+                  font-size: 12px; color: #666; }
+
+    /* ── Board ── */
+    .board { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+    .col-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;
+                 color: #999; margin-bottom: 10px; }
+    .nodes { display: flex; flex-direction: column; gap: 12px; }
+    .node { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px;
+            padding: 14px 16px; position: relative; }
+    .node.user-node { border-left: 3px solid #1a1a1a; }
+    .node.ai-node { border-left: 3px solid #c8a96e; }
+    .node .node-author { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+                         color: #999; margin-bottom: 6px; }
+    .node .node-text { font-size: 14px; line-height: 1.6; }
+    .node .node-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .node .node-actions button { font-size: 12px; padding: 4px 10px; border-radius: 4px;
+                                  border: 1px solid #e0ddd8; background: #fff;
+                                  cursor: pointer; color: #666; }
+    .node .node-actions button:hover { background: #f9f7f4; }
+    .node .reaction { font-size: 11px; color: #999; margin-top: 6px; font-style: italic; }
+
+    /* ── Input ── */
+    .argue-box { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px;
+                 padding: 20px; }
+    .argue-box textarea { width: 100%; border: none; outline: none; font-size: 15px;
+                          font-family: Georgia, serif; resize: none; min-height: 80px; }
+    .argue-box .argue-footer { display: flex; justify-content: space-between;
+                                align-items: center; margin-top: 12px; }
+    .argue-box .identity-hint { font-size: 12px; color: #aaa; }
+    .argue-box .identity-hint span { color: #888; background: #f0ede8;
+                                      padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+    .btn-argue { background: #1a1a1a; color: #fff; border: none; padding: 10px 24px;
+                 border-radius: 6px; font-size: 14px; cursor: pointer; }
+    .btn-argue:disabled { background: #ccc; cursor: default; }
+
+    /* ── Evolved thought banner ── */
+    .evolved { display: none; background: #fff8ed; border: 1px solid #e8d5a3;
+               border-radius: 10px; padding: 16px 20px; margin-top: 24px; }
+    .evolved h4 { font-size: 14px; font-weight: normal; margin-bottom: 6px; color: #8a6a1a; }
+    .evolved p { font-size: 13px; color: #666; line-height: 1.6; }
+    .evolved .evolved-actions { display: flex; gap: 10px; margin-top: 12px; }
+    .evolved .evolved-actions button { font-size: 13px; padding: 6px 16px;
+                                        border-radius: 6px; cursor: pointer; }
+    .evolved .btn-accept { background: #1a1a1a; color: #fff; border: none; }
+    .evolved .btn-dismiss { background: #fff; color: #666; border: 1px solid #e0ddd8; }
+  </style>
+</head>
+<body>
+
+  <!-- Setup Screen -->
+  <div class="setup" id="setupScreen">
+    <h1>New Exploration</h1>
+    <p>Define the space. Then argue.</p>
+
+    <div class="field">
+      <label>Your name / handle</label>
+      <input type="text" id="setupName" value="{{ username }}" placeholder="e.g. alex" />
+    </div>
+    <div class="field">
+      <label>Topic</label>
+      <input type="text" id="setupTopic" placeholder="e.g. Social media does more harm than good" />
+    </div>
+    <div class="field">
+      <label>Your opening argument</label>
+      <textarea id="setupOpening" rows="3" placeholder="State your position..."></textarea>
+    </div>
+    <div class="field">
+      <label>One rule for this exploration</label>
+      <input type="text" id="setupRule" placeholder="e.g. No ad hominem. Steelman all points." />
+    </div>
+    <div class="field">
+      <label>AI moderator role</label>
+      <select id="setupMode">
+        <option value="counter">Devil's advocate — challenge every point</option>
+        <option value="facilitate">Facilitator — find common ground</option>
+        <option value="steelman">Steelmanner — strengthen your argument first</option>
+      </select>
+    </div>
+    <button class="btn-primary" onclick="startExploration()">Begin Exploration →</button>
+  </div>
+
+  <!-- Exploration Screen -->
+  <div class="exploration" id="explorationScreen">
+    <div class="exp-header">
+      <div>
+        <h2 id="expTopic"></h2>
+        <div class="meta">Exploration · <span id="expName"></span> vs AI Moderator</div>
+      </div>
+      <div class="rule-badge" id="expRule"></div>
+    </div>
+
+    <div class="board">
+      <div>
+        <div class="col-label">Your arguments</div>
+        <div class="nodes" id="userNodes"></div>
+      </div>
+      <div>
+        <div class="col-label">AI moderator</div>
+        <div class="nodes" id="aiNodes"></div>
+      </div>
+    </div>
+
+    <div class="argue-box">
+      <textarea id="argInput" placeholder="Add to your argument..."></textarea>
+      <div class="argue-footer">
+        <div class="identity-hint">
+          Arguing as <span id="identityName"></span>
+        </div>
+        <button class="btn-argue" id="argBtn" onclick="submitArg()">Add argument →</button>
+      </div>
+    </div>
+
+    <div class="evolved" id="evolvedBanner">
+      <h4>✦ Evolved thought detected</h4>
+      <p id="evolvedText"></p>
+      <div class="evolved-actions">
+        <button class="btn-accept" onclick="acceptEvolved()">Save to identity →</button>
+        <button class="btn-dismiss" onclick="dismissEvolved()">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  let state = { topic: '', name: '', rule: '', mode: '', argCount: 0 };
+
+  function startExploration() {
+    const topic = document.getElementById('setupTopic').value.trim();
+    const opening = document.getElementById('setupOpening').value.trim();
+    const name = document.getElementById('setupName').value.trim() || 'You';
+    const rule = document.getElementById('setupRule').value.trim() || 'Be intellectually honest';
+    const mode = document.getElementById('setupMode').value;
+
+    if (!topic || !opening) {
+      alert('Please enter a topic and opening argument.');
+      return;
+    }
+
+    state = { topic, name, rule, mode, argCount: 0 };
+
+    document.getElementById('expTopic').textContent = topic;
+    document.getElementById('expName').textContent = name;
+    document.getElementById('expRule').textContent = '⚖ ' + rule;
+    document.getElementById('identityName').textContent = name;
+
+    document.getElementById('setupScreen').style.display = 'none';
+    document.getElementById('explorationScreen').style.display = 'block';
+
+    addUserNode(opening);
+    getAIResponse(opening);
+  }
+
+  function addUserNode(text) {
+    state.argCount++;
+    const div = document.createElement('div');
+    div.className = 'node user-node';
+    div.innerHTML = `
+      <div class="node-author">${state.name}</div>
+      <div class="node-text">${text}</div>
+      <div class="node-actions">
+        <button onclick="reactNode(this, 'agree')">✓ Agree</button>
+        <button onclick="reactNode(this, 'challenge')">↯ Challenge</button>
+      </div>`;
+    document.getElementById('userNodes').appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function addAINode(text, isThinking) {
+    const div = document.createElement('div');
+    div.className = isThinking ? 'node' : 'node ai-node';
+    div.innerHTML = isThinking
+      ? `<div class="node-author" style="color:#ccc">AI Moderator</div>
+         <div class="node-text" style="color:#bbb;font-style:italic">Thinking...</div>`
+      : `<div class="node-author" style="color:#c8a96e">AI Moderator</div>
+         <div class="node-text">${text}</div>
+         <div class="node-actions">
+           <button onclick="reactNode(this, 'agree')">✓ Agree</button>
+           <button onclick="reactNode(this, 'challenge')">↯ Challenge</button>
+         </div>`;
+    document.getElementById('aiNodes').appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return div;
+  }
+
+  function reactNode(btn, reaction) {
+    const node = btn.closest('.node');
+    let r = node.querySelector('.reaction');
+    if (!r) { r = document.createElement('div'); r.className = 'reaction'; node.appendChild(r); }
+    r.textContent = reaction === 'agree' ? '✓ You agreed with this point'
+                                         : '↯ You challenged this point';
+    btn.closest('.node-actions').querySelectorAll('button').forEach(b => b.disabled = true);
+
+    // After 3+ reactions, suggest evolved thought
+    if (document.querySelectorAll('.reaction').length >= 3) {
+      showEvolvedThought();
+    }
+  }
+
+  async function getAIResponse(argument) {
+    const thinking = addAINode('', true);
+    document.getElementById('argBtn').disabled = true;
+
+    const resp = await fetch('/debate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topic: state.topic,
+        argument,
+        mode: state.mode,
+        rule: state.rule
+      })
+    });
+
+    const data = await resp.json();
+    thinking.remove();
+    addAINode(data.counter, false);
+    document.getElementById('argBtn').disabled = false;
+  }
+
+  function submitArg() {
+    const text = document.getElementById('argInput').value.trim();
+    if (!text) return;
+    document.getElementById('argInput').value = '';
+    addUserNode(text);
+    getAIResponse(text);
+  }
+
+  function showEvolvedThought() {
+    const banner = document.getElementById('evolvedBanner');
+    if (banner.style.display === 'block') return;
+    document.getElementById('evolvedText').textContent =
+      'Based on this exploration, your position appears to have nuanced. '
+      + 'Would you like to save an updated version of this belief to your identity graph?';
+    banner.style.display = 'block';
+  }
+
+  function acceptEvolved() {
+    document.getElementById('evolvedBanner').style.display = 'none';
+    alert('Saved to identity graph. (OfSelf sync coming next!)');
+  }
+
+  function dismissEvolved() {
+    document.getElementById('evolvedBanner').style.display = 'none';
+  }
+</script>
+</body>
+</html>
