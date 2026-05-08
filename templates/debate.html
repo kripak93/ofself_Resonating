@@ -227,51 +227,55 @@
     }
   }
 
-  async function getAIResponse(argument) {
-    const thinking = addAINode('', true);
-    document.getElementById('argBtn').disabled = true;
+  let conversationId = '';
 
-    const resp = await fetch('/debate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        topic: state.topic,
-        argument,
-        mode: state.mode,
-        rule: state.rule
-      })
-    });
+async function getAIResponse(argument) {
+  const thinking = addAINode('', true);
+  document.getElementById('argBtn').disabled = true;
 
-    const data = await resp.json();
-    thinking.remove();
-    addAINode(data.counter, false);
-    document.getElementById('argBtn').disabled = false;
+  const resp = await fetch('/debate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      topic: state.topic,
+      argument,
+      mode: state.mode,
+      rule: state.rule,
+      conversation_id: conversationId
+    })
+  });
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  thinking.remove();
+  const aiNode = addAINode('', false);
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const lines = decoder.decode(value).split('\n');
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue;
+      try {
+        const data = JSON.parse(line.slice(5));
+        if (data.type === 'auth_required') {
+          aiNode.querySelector('.node-text').innerHTML =
+            '⚠ One-time setup needed. <a href="' + data.url + '" target="_blank">Click here to authorize the AI moderator</a>, then resubmit your argument.';
+          document.getElementById('argBtn').disabled = false;
+          return;
+        } else if (data.type === 'chunk') {
+          fullText += data.text;
+          aiNode.querySelector('.node-text').textContent = fullText;
+        } else if (data.type === 'done') {
+          conversationId = data.conversation_id;
+        }
+      } catch(e) {}
+    }
   }
 
-  function submitArg() {
-    const text = document.getElementById('argInput').value.trim();
-    if (!text) return;
-    document.getElementById('argInput').value = '';
-    addUserNode(text);
-    getAIResponse(text);
-  }
+  document.getElementById('argBtn').disabled = false;
 
-  function showEvolvedThought() {
-    const banner = document.getElementById('evolvedBanner');
-    if (banner.style.display === 'block') return;
-    document.getElementById('evolvedText').textContent =
-      'Based on this exploration, your position appears to have nuanced. '
-      + 'Would you like to save an updated version of this belief to your identity graph?';
-    banner.style.display = 'block';
-  }
-
-  function acceptEvolved() {
-    document.getElementById('evolvedBanner').style.display = 'none';
-    alert('Saved to identity graph. (OfSelf sync coming next!)');
-  }
-
-  function dismissEvolved() {
-    document.getElementById('evolvedBanner').style.display = 'none';
   }
 </script>
 </body>
