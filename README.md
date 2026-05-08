@@ -23,17 +23,16 @@ A simple FastAPI app for ofself debate sessions with Personas integration.
 3. Add environment variables in `.env`:
    ```env
    PARADIGM_API_KEY=...
-   PARADIGM_APP_ID=...
    PARADIGM_CLIENT_ID=...
    PARADIGM_BASE_URL=https://api.ofself.ai
-   ANTHROPIC_API_KEY=...
-   INTERNAL_HEADLESS_SECRET=...
-   PERSONAS_APP_ID=...
-   PERSONAS_HMAC_KEY=...
-   PERSONAS_BASE_URL=https://personas.ofself.ai
+   HEADLESS_PLUGIN_URL=https://plugins.ofself.ai/headless
+   HEADLESS_API_KEY=hl_...          # returned at app registration
+   HEADLESS_HMAC_SECRET=...         # returned at app registration
+   HEADLESS_APP_ID=...              # for update_agent.py only
+   HEADLESS_ADMIN_SECRET=...        # for update_agent.py only
    ```
 
-> `INTERNAL_HEADLESS_SECRET` is required only for app registration via `/personas/register`.
+> Register the app once via `POST /apps/register` (with `X-Admin-Secret`) to get `HEADLESS_API_KEY` and `HEADLESS_HMAC_SECRET`.
 
 ## Run
 
