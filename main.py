@@ -16,9 +16,9 @@ API_KEY         = os.getenv("PARADIGM_API_KEY")
 CLIENT_ID       = os.getenv("PARADIGM_CLIENT_ID")
 REDIRECT_URI    = "http://localhost:8000/auth/callback"
 BASE_URL        = os.getenv("PARADIGM_BASE_URL")
-PERSONAS_BASE   = os.getenv("PERSONAS_BASE_URL")
-PERSONAS_APP_ID = os.getenv("PERSONAS_APP_ID")
-PERSONAS_HMAC   = os.getenv("PERSONAS_HMAC_KEY")
+HEADLESS_URL    = os.getenv("HEADLESS_PLUGIN_URL")   # e.g. https://plugins.ofself.ai/headless
+HEADLESS_KEY    = os.getenv("HEADLESS_API_KEY")       # hl_<key_id>.<secret>
+HEADLESS_HMAC   = os.getenv("HEADLESS_HMAC_SECRET")   # hmac_secret from registration
 
 class DebateInput(BaseModel):
     topic: str
@@ -86,7 +86,6 @@ async def debate(payload: DebateInput, request: Request):
         return {"error": "Not logged in"}
 
     persona = mode_prompts.get(payload.mode, mode_prompts["counter"])
-
     system_prompt = (
         f"{persona}\n\n"
         f"The debate topic is: {payload.topic}\n"
@@ -97,68 +96,62 @@ async def debate(payload: DebateInput, request: Request):
     )
 
     body = {
-    "app_id":           PERSONAS_APP_ID,
-    "hmac_key":         PERSONAS_HMAC,
-    "paradigm_user_id": user_id,
-    "message":          payload.argument,
-    "app_name":         "Debate Platform",
-    "agent_name":       "Debate Moderator",
-    "system_prompt":    system_prompt,
-    "temperature":      0.7,
-    "tools_config": {
-        "web_search": False,
-        "wikipedia":  False,
+        "paradigm_user_id": user_id,
+        "message":          payload.argument,
+        "variables":        {"debate_prompt": system_prompt},
     }
-}
-
     if payload.conversation_id:
         body["conversation_id"] = payload.conversation_id
 
     raw_body = json.dumps(body, separators=(',', ':'), sort_keys=True).encode('utf-8')
-    sig = hmac.new(PERSONAS_HMAC.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
+    sig = hmac.new(HEADLESS_HMAC.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
 
     headers = {
         "Content-Type":         "application/json",
-        "X-Internal-Signature": f"sha256={sig}"
+        "X-Headless-Key":       HEADLESS_KEY,
+        "X-Headless-Signature": f"sha256={sig}",
     }
 
-    async def stream_personas():
+    async def stream_response():
         async with httpx.AsyncClient(timeout=60) as client:
-            async with client.stream(
-                "POST",
-                f"{PERSONAS_BASE}/internal/headless/run/stream",
+            resp = await client.post(
+                f"{HEADLESS_URL}/chat",
                 content=raw_body,
-                headers=headers
-            ) as resp:
-                print("PERSONAS STATUS:", resp.status_code)
-                async for line in resp.aiter_lines():
-                    print("LINE:", line)
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                        if data.get("requires_realm_assignment"):
-                            yield f"data:{json.dumps({'type': 'auth_required', 'url': data['redirect_url']})}\n\n"
-                            return
-                    except:
-                        pass
+                headers=headers,
+            )
+            print("HEADLESS STATUS:", resp.status_code)
+            data = resp.json()
+            print("HEADLESS RESPONSE:", data)
 
-                    if not line.startswith("data:"):
-                        continue
-                    data_str = line[5:].strip()
-                    if not data_str:
-                        continue
-                    try:
-                        data = json.loads(data_str)
-                        event = data.get("event")
-                        if event == "content":
-                            chunk = data.get("text", "")
-                            yield f"data:{json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-                        elif event == "done":
-                            conversation_id = data.get("conversation_id", "")
-                            yield f"data:{json.dumps({'type': 'done', 'conversation_id': conversation_id})}\n\n"
-                    except Exception as e:
-                        print("PARSE ERROR:", e)
-                        continue
+            if data.get("requires_realm_assignment"):
+                # Use the plugin's /authorize EP to get the proper sub-entity consent URL
+                auth_body = json.dumps(
+                    {"paradigm_user_id": user_id},
+                    separators=(',', ':'), sort_keys=True
+                ).encode('utf-8')
+                auth_sig = hmac.new(
+                    HEADLESS_HMAC.encode('utf-8'), auth_body, hashlib.sha256
+                ).hexdigest()
+                auth_resp = await client.post(
+                    f"{HEADLESS_URL}/authorize",
+                    content=auth_body,
+                    headers={
+                        "Content-Type":         "application/json",
+                        "X-Headless-Key":       HEADLESS_KEY,
+                        "X-Headless-Signature": f"sha256={auth_sig}",
+                    },
+                )
+                consent_url = auth_resp.json().get("consent_url", "")
+                yield f"data:{json.dumps({'type': 'auth_required', 'url': consent_url})}\n\n"
+                return
 
-    return StreamingResponse(stream_personas(), media_type="text/event-stream")
+            if data.get("error"):
+                yield f"data:{json.dumps({'type': 'error', 'message': data.get('message', 'Unknown error')})}\n\n"
+                return
+
+            text = data.get("assistant_text", "")
+            conversation_id = data.get("conversation_id", "")
+            yield f"data:{json.dumps({'type': 'chunk', 'text': text})}\n\n"
+            yield f"data:{json.dumps({'type': 'done', 'conversation_id': conversation_id})}\n\n"
+
+    return StreamingResponse(stream_response(), media_type="text/event-stream")
