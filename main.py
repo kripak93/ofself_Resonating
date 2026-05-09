@@ -16,9 +16,9 @@ API_KEY         = os.getenv("PARADIGM_API_KEY")
 CLIENT_ID       = os.getenv("PARADIGM_CLIENT_ID")
 REDIRECT_URI    = "http://localhost:8000/auth/callback"
 BASE_URL        = os.getenv("PARADIGM_BASE_URL")
-HEADLESS_URL    = os.getenv("HEADLESS_PLUGIN_URL")   # e.g. https://plugins.ofself.ai/headless
-HEADLESS_KEY    = os.getenv("HEADLESS_API_KEY")       # hl_<key_id>.<secret>
-HEADLESS_HMAC   = os.getenv("HEADLESS_HMAC_SECRET")   # hmac_secret from registration
+PERSONAS_URL    = os.getenv("PERSONAS_URL", "http://localhost:5050")
+PERSONAS_APP_ID = os.getenv("PERSONAS_APP_ID", "")
+PERSONAS_HMAC   = os.getenv("PERSONAS_HMAC_KEY", "")
 
 class DebateInput(BaseModel):
     topic: str
@@ -96,26 +96,33 @@ async def debate(payload: DebateInput, request: Request):
     )
 
     body = {
-        "paradigm_user_id": user_id,
-        "message":          payload.argument,
-        "variables":        {"debate_prompt": system_prompt},
+        "app_id":            PERSONAS_APP_ID,
+        "hmac_key":          PERSONAS_HMAC,
+        "paradigm_user_id":  user_id,
+        "app_name":          "ofSelf Resonating",
+        "agent_name":        "Resonating",
+        "system_prompt":     system_prompt,
+        "llm_provider":      "ofself",
+        "llm_model":         "gpt-5.2",
+        "message":           payload.argument,
+        "client_id":         CLIENT_ID,
+        "return_to":         "http://localhost:8000/",
     }
     if payload.conversation_id:
         body["conversation_id"] = payload.conversation_id
 
-    raw_body = json.dumps(body, separators=(',', ':'), sort_keys=True).encode('utf-8')
-    sig = hmac.new(HEADLESS_HMAC.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
+    raw_body = json.dumps(body, separators=(',', ':')).encode('utf-8')
+    sig = 'sha256=' + hmac.new(PERSONAS_HMAC.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
 
     headers = {
-        "Content-Type":         "application/json",
-        "X-Headless-Key":       HEADLESS_KEY,
-        "X-Headless-Signature": f"sha256={sig}",
+        "Content-Type":       "application/json",
+        "X-Internal-Signature": sig,
     }
 
     async def stream_response():
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
-                f"{HEADLESS_URL}/chat",
+                f"{PERSONAS_URL}/api/v1/internal/headless/run",
                 content=raw_body,
                 headers=headers,
             )
@@ -124,25 +131,7 @@ async def debate(payload: DebateInput, request: Request):
             print("HEADLESS RESPONSE:", data)
 
             if data.get("requires_realm_assignment"):
-                # Use the plugin's /authorize EP to get the proper sub-entity consent URL
-                auth_body = json.dumps(
-                    {"paradigm_user_id": user_id},
-                    separators=(',', ':'), sort_keys=True
-                ).encode('utf-8')
-                auth_sig = hmac.new(
-                    HEADLESS_HMAC.encode('utf-8'), auth_body, hashlib.sha256
-                ).hexdigest()
-                auth_resp = await client.post(
-                    f"{HEADLESS_URL}/authorize",
-                    content=auth_body,
-                    headers={
-                        "Content-Type":         "application/json",
-                        "X-Headless-Key":       HEADLESS_KEY,
-                        "X-Headless-Signature": f"sha256={auth_sig}",
-                    },
-                )
-                consent_url = auth_resp.json().get("consent_url", "")
-                yield f"data:{json.dumps({'type': 'auth_required', 'url': consent_url})}\n\n"
+                yield f"data:{json.dumps({'type': 'auth_required', 'url': data.get('redirect_url', '')})}\n\n"
                 return
 
             if data.get("error"):
